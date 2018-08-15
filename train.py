@@ -118,8 +118,8 @@ if __name__ == '__main__':
         main_proc = args.rank == 0  # Only the first proc should save models
     save_folder = args.save_folder
 
-    loss_results, cer_results, wer_results = torch.Tensor(args.epochs), torch.Tensor(args.epochs), torch.Tensor(
-        args.epochs)
+    with torch.no_grad():
+        loss_results, cer_results, wer_results = torch.Tensor(args.epochs), torch.Tensor(args.epochs), torch.Tensor(args.epochs)
     best_wer = None
     if args.visdom and main_proc:
         from visdom import Visdom
@@ -279,8 +279,9 @@ if __name__ == '__main__':
                 tqdm.write("WARNING: received an inf loss, setting loss value to 0")
                 loss_value = 0
 
-            avg_loss += loss_value
+            avg_loss += float(loss_value)
             losses.update(loss_value, inputs.size(0))
+            del loss_value
 
             # compute gradient
             optimizer.zero_grad()
@@ -309,6 +310,8 @@ if __name__ == '__main__':
                            file_path)
             del loss
             del out
+            torch.cuda.empty_cache()
+
         avg_loss /= len(train_sampler)
 
         epoch_time = time.time() - start_epoch_time
