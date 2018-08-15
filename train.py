@@ -230,11 +230,11 @@ if __name__ == '__main__':
     data_time = AverageMeter()
     losses = AverageMeter()
 
-    for epoch in range(start_epoch, args.epochs):
+    for epoch in tqdm(range(start_epoch, args.epochs), desc='Epoch'):
         model.train()
         end = time.time()
         start_epoch_time = time.time()
-        for i, (data) in enumerate(train_loader, start=start_iter):
+        for i, (data) in tqdm(enumerate(train_loader, start=start_iter), leave=False, total=len(train_sampler), miniters=0):
             if i == len(train_sampler):
                 break
             inputs, targets, input_percentages, target_sizes = data
@@ -257,7 +257,7 @@ if __name__ == '__main__':
             else:
                 loss_value = loss.item()
             if loss_value == inf or loss_value == -inf:
-                print("WARNING: received an inf loss, setting loss value to 0")
+                tqdm.write("WARNING: received an inf loss, setting loss value to 0")
                 loss_value = 0
 
             avg_loss += loss_value
@@ -275,14 +275,15 @@ if __name__ == '__main__':
             batch_time.update(time.time() - end)
             end = time.time()
             if not args.silent:
-                print('Epoch: [{0}][{1}/{2}]\t'
+                tqdm.write('Epoch: [{0}][{1}/{2}]\t'
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
                     (epoch + 1), (i + 1), len(train_sampler), batch_time=batch_time, data_time=data_time, loss=losses))
             if args.checkpoint_per_batch > 0 and i > 0 and (i + 1) % args.checkpoint_per_batch == 0 and main_proc:
                 file_path = '%s/deepspeech_checkpoint_epoch_%d_iter_%d.pth' % (save_folder, epoch + 1, i + 1)
-                print("Saving checkpoint model to %s" % file_path)
+                if not args.silent:
+                    tqdm.write("Saving checkpoint model to %s" % file_path)
                 torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, iteration=i,
                                                 loss_results=loss_results,
                                                 wer_results=wer_results, cer_results=cer_results, avg_loss=avg_loss),
@@ -292,7 +293,7 @@ if __name__ == '__main__':
         avg_loss /= len(train_sampler)
 
         epoch_time = time.time() - start_epoch_time
-        print('Training Summary Epoch: [{0}]\t'
+        tqdm.write('Training Summary Epoch: [{0}]\t'
               'Time taken (s): {epoch_time:.0f}\t'
               'Average Loss {loss:.3f}\t'.format(epoch + 1, epoch_time=epoch_time, loss=avg_loss))
 
@@ -333,7 +334,7 @@ if __name__ == '__main__':
             loss_results[epoch] = avg_loss
             wer_results[epoch] = wer
             cer_results[epoch] = cer
-            print('Validation Summary Epoch: [{0}]\t'
+            tqdm.write('Validation Summary Epoch: [{0}]\t'
                   'Average WER {wer:.3f}\t'
                   'Average CER {cer:.3f}\t'.format(epoch + 1, wer=wer, cer=cer))
 
@@ -378,12 +379,12 @@ if __name__ == '__main__':
                 print('Learning rate annealed to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
 
             if (best_wer is None or best_wer > wer) and main_proc:
-                print("Found better validated model, saving to %s" % args.model_path)
+                tqdm.write("Found better validated model, saving to %s" % args.model_path)
                 torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
                                                 wer_results=wer_results, cer_results=cer_results), args.model_path)
                 best_wer = wer
 
                 avg_loss = 0
             if not args.no_shuffle:
-                print("Shuffling batches...")
+                tqdm.write("Shuffling batches...")
                 train_sampler.shuffle(epoch)
