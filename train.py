@@ -13,6 +13,8 @@ from data.utils import reduce_tensor
 from decoder import GreedyDecoder
 from model import DeepSpeech, supported_rnns
 
+from lr import OneCycle, Anneal
+
 parser = argparse.ArgumentParser(description='DeepSpeech training')
 parser.add_argument('--train-manifest', metavar='DIR',
                     help='path to train manifest csv', default='data/train_manifest.csv')
@@ -31,6 +33,11 @@ parser.add_argument('--rnn-type', default='gru', help='Type of the RNN. rnn|gru|
 parser.add_argument('--epochs', default=70, type=int, help='Number of training epochs')
 parser.add_argument('--cuda', dest='cuda', action='store_true', help='Use cuda to train model')
 parser.add_argument('--lr', '--learning-rate', default=3e-4, type=float, help='initial learning rate')
+parser.add_argument('--onecycle', dest='onecycle', action='store_true', help='Use 1cycle policy for LR schedule')
+parser.add_argument('--onecycle-lr-div', default=10, type=int, help='LR divider for 1cycle policy')
+parser.add_argument('--onecycle-low-momentum', default=0.9, type=float, help='Momentum percentage for low point in 1cycle policy. Default 0.9')
+parser.add_argument('--onecycle-anneal-pct', default=0.1, type=float, help='LR anneal percentage in 1cycle policy')
+
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
 parser.add_argument('--max-norm', default=400, type=int, help='Norm cutoff to prevent explosion of gradients')
 parser.add_argument('--learning-anneal', default=1.1, type=float, help='Annealing applied to learning rate every epoch')
@@ -230,7 +237,19 @@ if __name__ == '__main__':
     data_time = AverageMeter()
     losses = AverageMeter()
 
+    if args.onecycle:
+        print("Using OneCycle policy")
+        lr_schedule = OneCycle(optimizer, args.epochs, args.lr / args.onecycle_lr_div, args.lr, args.momentum, args.momentum * args.onecycle_low_momentum, args.onecycle_anneal_pct, args.learning_anneal)
+    else:
+        print("Using Anneal")
+        lr_schedule = Anneal(optimizer, args.epochs, args.lr, args.learning_anneal)
+
+    # Skip initial epochs to get SGDScheduler up to pace
+    for _ in range(start_epoch):
+        lr_schedule.step()
+
     for epoch in tqdm(range(start_epoch, args.epochs), desc='Epoch'):
+        lr_schedule.step()
         model.train()
         end = time.time()
         start_epoch_time = time.time()
@@ -372,11 +391,6 @@ if __name__ == '__main__':
                 torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
                                                 wer_results=wer_results, cer_results=cer_results),
                            file_path)
-                # anneal lr
-                optim_state = optimizer.state_dict()
-                optim_state['param_groups'][0]['lr'] = optim_state['param_groups'][0]['lr'] / args.learning_anneal
-                optimizer.load_state_dict(optim_state)
-                print('Learning rate annealed to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
 
             if (best_wer is None or best_wer > wer) and main_proc:
                 tqdm.write("Found better validated model, saving to %s" % args.model_path)
