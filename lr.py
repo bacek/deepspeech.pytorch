@@ -68,7 +68,7 @@ class OneCycle(SGDSchedule):
             [momentum_from for i in range(cycle_len, epochs)]
             ])
 
-        super().__init__(optimizer, lr, momentum, None)
+        super().__init__(optimizer, lr, momentum)
 
 class Anneal(SGDSchedule):
     def __init__(self, optimizer, epochs, lr, learning_anneal):
