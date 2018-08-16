@@ -14,6 +14,7 @@ from decoder import GreedyDecoder
 from model import DeepSpeech, supported_rnns
 
 from lr import OneCycle, Anneal
+from observer import TensorboardWriter
 
 parser = argparse.ArgumentParser(description='DeepSpeech training')
 parser.add_argument('--train-manifest', metavar='DIR',
@@ -83,10 +84,6 @@ torch.manual_seed(123456)
 torch.cuda.manual_seed_all(123456)
 
 
-def to_np(x):
-    return x.data.cpu().numpy()
-
-
 class AverageMeter(object):
     """Computes and stores the average and current value"""
 
@@ -118,6 +115,8 @@ if __name__ == '__main__':
         main_proc = args.rank == 0  # Only the first proc should save models
     save_folder = args.save_folder
 
+    observers = []
+
     with torch.no_grad():
         loss_results, cer_results, wer_results = torch.Tensor(args.epochs), torch.Tensor(args.epochs), torch.Tensor(args.epochs)
     best_wer = None
@@ -128,11 +127,10 @@ if __name__ == '__main__':
         opts = dict(title=args.id, ylabel='', xlabel='Epoch', legend=['Loss', 'WER', 'CER'])
         viz_window = None
         epochs = torch.arange(1, args.epochs + 1)
-    if args.tensorboard and main_proc:
-        os.makedirs(args.log_dir, exist_ok=True)
-        from tensorboardX import SummaryWriter
 
-        tensorboard_writer = SummaryWriter(args.log_dir)
+    if args.tensorboard and main_proc:
+        observers.append(TensorboardWriter(args.id, args.log_dir, args.log_params))
+
     os.makedirs(save_folder, exist_ok=True)
 
     avg_loss, start_epoch, start_iter = 0, 0, 0
@@ -171,16 +169,12 @@ if __name__ == '__main__':
                     Y=y_axis,
                     opts=opts,
                 )
-            if main_proc and args.tensorboard and \
-                            package[
-                                'loss_results'] is not None and start_epoch > 0:  # Previous scores to tensorboard logs
-                for i in range(start_epoch):
-                    values = {
-                        'Avg Train Loss': loss_results[i],
-                        'Avg WER': wer_results[i],
-                        'Avg CER': cer_results[i]
-                    }
-                    tensorboard_writer.add_scalars(args.id, values, i + 1)
+
+            for i in range(start_epoch):
+                for o in observers:
+                    o.on_epoch_end(model, i, loss_results[i], wer_results[i], cer_results[i])
+
+
     else:
         with open(args.labels_path) as label_file:
             labels = str(''.join(json.load(label_file)))
@@ -377,18 +371,10 @@ if __name__ == '__main__':
                         win=viz_window,
                         update='replace',
                     )
-            if args.tensorboard and main_proc:
-                values = {
-                    'Avg Train Loss': avg_loss,
-                    'Avg WER': wer,
-                    'Avg CER': cer
-                }
-                tensorboard_writer.add_scalars(args.id, values, epoch + 1)
-                if args.log_params:
-                    for tag, value in model.named_parameters():
-                        tag = tag.replace('.', '/')
-                        tensorboard_writer.add_histogram(tag, to_np(value), epoch + 1)
-                        tensorboard_writer.add_histogram(tag + '/grad', to_np(value.grad), epoch + 1)
+
+            for o in observers:
+                o.on_epoch_end(model, epoch, avg_loss, wer, cer)
+
             if args.checkpoint and main_proc:
                 file_path = '%s/deepspeech_%d.pth' % (save_folder, epoch + 1)
                 torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
