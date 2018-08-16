@@ -1,6 +1,7 @@
 import logging
 import itertools
 
+
 def linear_decay(frm, to, steps):
     '''
     Generate linear values between fmr and to for number of steps.
@@ -12,6 +13,7 @@ def linear_decay(frm, to, steps):
         step += 1
         yield val
 
+
 def div_decay(frm, anneal, steps):
     val = frm
     step = 0
@@ -19,6 +21,7 @@ def div_decay(frm, anneal, steps):
         yield val
         val /= anneal
         step += 1
+
 
 class SGDSchedule(object):
     '''
@@ -52,6 +55,7 @@ class SGDSchedule(object):
             if lr is not None: param_group['lr'] = lr
             if momentum is not None: param_group['momentum'] = momentum
 
+
 class OneCycle(SGDSchedule):
     def __init__(self, optimizer, epochs, lr_from, lr_to, momentum_from, momentum_to, anneal_pct, anneal_rate):
         # Total number of train epochs
@@ -72,6 +76,7 @@ class OneCycle(SGDSchedule):
         super().__init__(logging.getLogger('lr.OneCycle'), optimizer, lr, momentum)
 
         self.logger.info("lr: {}->{} m: {}->{}".format(lr_from, lr_to, momentum_from, momentum_to))
+
 
 class Anneal(SGDSchedule):
     def __init__(self, optimizer, epochs, lr, learning_anneal):
