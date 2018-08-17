@@ -179,7 +179,7 @@ if __name__ == '__main__':
 
             for i in range(start_epoch):
                 for o in observers:
-                    o.on_epoch_end(model, optimizer, i, loss_results[0:i+1], wer_results[0:i+1], cer_results[0:i+1])
+                    o.on_epoch_end(model, optimizer, i, loss_results, wer_results, cer_results)
 
 
     else:
@@ -386,7 +386,7 @@ if __name__ == '__main__':
                     )
 
             for o in observers:
-                o.on_epoch_end(model, optimizer, epoch, loss_results[0:epoch+1], wer_results[0:epoch+1], cer_results[0:epoch+1])
+                o.on_epoch_end(model, optimizer, epoch, loss_results, wer_results, cer_results)
 
             if (best_wer is None or best_wer > wer) and main_proc:
                 logger("Found better validated model, saving to %s" % args.model_path)

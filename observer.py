@@ -36,9 +36,9 @@ class TensorboardWriter(Observer):
     def on_epoch_end(self, model, optimizer, epoch, loss_results, wer_results, cer_results):
         self.logger("Updating tensorboard for epoch {} {}".format(epoch + 1, loss_results))
         values = {
-            'Avg Train Loss': loss_results[-1],
-            'Avg WER': wer_results[-1],
-            'Avg CER': cer_results[-1],
+            'Avg Train Loss': loss_results[epoch],
+            'Avg WER': wer_results[epoch],
+            'Avg CER': cer_results[epoch],
         }
         self.tensorboard_writer.add_scalars(self.id, values, epoch + 1)
         if self.log_params:
