@@ -16,7 +16,7 @@ from model import DeepSpeech, supported_rnns
 from lr import OneCycle, Anneal
 from observer import TensorboardWriter, CheckpointWriter, CheckpointBatchWriter
 
-parser = argparse.ArgumentParser(description='DeepSpeech training')
+parser = argparse.ArgumentParser(description='DeepSpeech training', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--train-manifest', metavar='DIR',
                     help='path to train manifest csv', default='data/train_manifest.csv')
 parser.add_argument('--val-manifest', metavar='DIR',
