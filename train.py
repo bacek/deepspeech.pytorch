@@ -15,7 +15,7 @@ from decoder import GreedyDecoder
 from model import DeepSpeech, supported_rnns
 
 from lr import OneCycle, Anneal
-from observer import TensorboardWriter, CheckpointWriter, CheckpointBatchWriter
+from observer import TensorboardWriter, VisdomWriter, CheckpointWriter, CheckpointBatchWriter
 
 parser = argparse.ArgumentParser(description='DeepSpeech training', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('--train-manifest', metavar='DIR',
@@ -162,16 +162,13 @@ if __name__ == '__main__':
     with torch.no_grad():
         loss_results, cer_results, wer_results = torch.Tensor(args.epochs), torch.Tensor(args.epochs), torch.Tensor(args.epochs)
     best_wer = None
-    if args.visdom and main_proc:
-        from visdom import Visdom
 
-        viz = Visdom()
-        opts = dict(title=args.id, ylabel='', xlabel='Epoch', legend=['Loss', 'WER', 'CER'])
-        viz_window = None
-        epochs = torch.arange(1, args.epochs + 1)
+    if main_proc:
+        if args.visdom:
+            observers.append(VisdomWriter(args.id))
 
-    if args.tensorboard and main_proc:
-        observers.append(TensorboardWriter(args.id, args.log_dir, args.log_params))
+        if args.tensorboard:
+            observers.append(TensorboardWriter(args.id, args.log_dir, args.log_params))
 
     os.makedirs(save_folder, exist_ok=True)
 
@@ -197,20 +194,7 @@ if __name__ == '__main__':
             else:
                 start_iter += 1
             avg_loss = int(package.get('avg_loss', 0))
-            loss_results, cer_results, wer_results = package['loss_results'], package[
-                'cer_results'], package['wer_results']
-            if main_proc and args.visdom and \
-                            package[
-                                'loss_results'] is not None and start_epoch > 0:  # Add previous scores to visdom graph
-                x_axis = epochs[0:start_epoch]
-                y_axis = torch.stack(
-                    (loss_results[0:start_epoch], wer_results[0:start_epoch], cer_results[0:start_epoch]),
-                    dim=1)
-                viz_window = viz.line(
-                    X=x_axis,
-                    Y=y_axis,
-                    opts=opts,
-                )
+            loss_results, cer_results, wer_results = package['loss_results'], package['cer_results'], package['wer_results']
 
             for i in range(start_epoch):
                 for o in observers:
@@ -404,24 +388,6 @@ if __name__ == '__main__':
             logger.debug('Validation Summary Epoch: [{0}]\t'
                   'Average WER {wer:.3f}\t'
                   'Average CER {cer:.3f}\t'.format(epoch + 1, wer=wer, cer=cer))
-
-            if args.visdom and main_proc:
-                x_axis = epochs[0:epoch + 1]
-                y_axis = torch.stack(
-                    (loss_results[0:epoch + 1], wer_results[0:epoch + 1], cer_results[0:epoch + 1]), dim=1)
-                if viz_window is None:
-                    viz_window = viz.line(
-                        X=x_axis,
-                        Y=y_axis,
-                        opts=opts,
-                    )
-                else:
-                    viz.line(
-                        X=x_axis.unsqueeze(0).expand(y_axis.size(1), x_axis.size(0)).transpose(0, 1),  # Visdom fix
-                        Y=y_axis,
-                        win=viz_window,
-                        update='replace',
-                    )
 
             for o in observers:
                 o.on_epoch_end(model, optimizer, epoch, loss_results, wer_results, cer_results)

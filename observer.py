@@ -87,3 +87,37 @@ class CheckpointBatchWriter(Observer):
                                             loss_results=loss_results,
                                             wer_results=wer_results, cer_results=cer_results, avg_loss=avg_loss),
                        file_path)
+
+
+class VisdomWriter(Observer):
+    def __init__(self, id, epochs):
+        super().__init__(logging.getLogger('VisdomWriter'))
+        from visdom import Visdom
+
+        self.viz = Visdom()
+        opts = dict(title=id, ylabel='', xlabel='Epoch', legend=['Loss', 'WER', 'CER'])
+        self.viz_window = None
+        self.epochs = torch.arange(1, epochs + 1)
+
+
+    def on_epoch_end(self, model, optimizer, epoch, loss_results, wer_results, cer_results):
+        self.logger.debug('Updating Visdom')
+ 
+        x_axis = self.epochs[0:epoch + 1]
+        y_axis = torch.stack(
+            (loss_results[0:epoch + 1], wer_results[0:epoch + 1], cer_results[0:epoch + 1]), dim=1)
+        if self.viz_window is None:
+            self.viz_window = viz.line(
+                X=x_axis,
+                Y=y_axis,
+                opts=opts,
+            )
+        else:
+            viz.line(
+                X=x_axis.unsqueeze(0).expand(y_axis.size(1), x_axis.size(0)).transpose(0, 1),  # Visdom fix
+                Y=y_axis,
+                win=self.viz_window,
+                update='replace',
+            )
+
+
