@@ -251,8 +251,8 @@ if __name__ == '__main__':
             model = torch.nn.parallel.DistributedDataParallel(model,
                                                               device_ids=(int(args.gpu_rank),) if args.rank else None)
 
-    logger.debug(model)
-    logger.debug("Number of parameters: %d" % DeepSpeech.get_param_size(model))
+    logger.info(model)
+    logger.info("Number of parameters: %d" % DeepSpeech.get_param_size(model))
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -284,10 +284,13 @@ if __name__ == '__main__':
         model.train()
         end = time.time()
         start_epoch_time = time.time()
-        with tqdm(enumerate(train_loader, start=start_iter), desc='Batch', leave=False, initial=start_iter, total=len(train_sampler), miniters=0) as t:
+        with tqdm(enumerate(train_loader, start=start_iter), desc='Train', leave=False, initial=start_iter, total=len(train_sampler), miniters=0) as t:
             for i, (data) in t:
                 if i == len(train_sampler):
                     break
+
+                t.set_postfix(Loss=losses, Data=data_time)
+
                 inputs, targets, input_percentages, target_sizes = data
                 input_sizes = input_percentages.mul_(int(inputs.size(3))).int()
                 # measure data loading time
@@ -331,8 +334,6 @@ if __name__ == '__main__':
                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
                     (epoch + 1), (i + 1), len(train_sampler), batch_time=batch_time, data_time=data_time, loss=losses))
-
-                t.set_postfix(Loss=losses, Data=data_time)
 
                 for o in observers:
                     o.on_batch_end(model, optimizer, epoch, i, loss_results, wer_results, cer_results, avg_loss)
