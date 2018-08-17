@@ -14,7 +14,7 @@ from decoder import GreedyDecoder
 from model import DeepSpeech, supported_rnns
 
 from lr import OneCycle, Anneal
-from observer import TensorboardWriter
+from observer import TensorboardWriter, CheckpointWriter, CheckpointBatchWriter
 
 parser = argparse.ArgumentParser(description='DeepSpeech training')
 parser.add_argument('--train-manifest', metavar='DIR',
@@ -172,7 +172,7 @@ if __name__ == '__main__':
 
             for i in range(start_epoch):
                 for o in observers:
-                    o.on_epoch_end(model, i, loss_results[i], wer_results[i], cer_results[i])
+                    o.on_epoch_end(model, optimizer, i, loss_results[0:i+1], wer_results[0:i+1], cer_results[0:i+1])
 
 
     else:
@@ -198,6 +198,7 @@ if __name__ == '__main__':
         parameters = model.parameters()
         optimizer = torch.optim.SGD(parameters, lr=args.lr,
                                     momentum=args.momentum, nesterov=True)
+
     criterion = CTCLoss()
     decoder = GreedyDecoder(labels)
     train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest, labels=labels,
@@ -237,6 +238,14 @@ if __name__ == '__main__':
     else:
         print("Using Anneal")
         lr_schedule = Anneal(optimizer, args.epochs, args.lr, args.learning_anneal)
+
+    # Add observers for different steps needed during actual training only
+    if main_proc:
+        if args.checkpoint:
+            observers.append(CheckpointWriter(save_folder))
+
+        if args.checkpoint_per_batch > 0:
+            observers.append(CheckpointBatchWriter(save_folder, args.checkpoint_per_batch))
 
     # Skip initial epochs to get SGDScheduler up to pace
     for _ in range(start_epoch):
@@ -294,14 +303,10 @@ if __name__ == '__main__':
                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
                     (epoch + 1), (i + 1), len(train_sampler), batch_time=batch_time, data_time=data_time, loss=losses))
-            if args.checkpoint_per_batch > 0 and i > 0 and (i + 1) % args.checkpoint_per_batch == 0 and main_proc:
-                file_path = '%s/deepspeech_checkpoint_epoch_%d_iter_%d.pth' % (save_folder, epoch + 1, i + 1)
-                if not args.silent:
-                    tqdm.write("Saving checkpoint model to %s" % file_path)
-                torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, iteration=i,
-                                                loss_results=loss_results,
-                                                wer_results=wer_results, cer_results=cer_results, avg_loss=avg_loss),
-                           file_path)
+
+            for o in observers:
+                o.on_batch_end(model, optimizer, epoch, i, loss_results, wer_results, cer_results, avg_loss)
+
             del loss
             del out
             torch.cuda.empty_cache()
@@ -373,13 +378,7 @@ if __name__ == '__main__':
                     )
 
             for o in observers:
-                o.on_epoch_end(model, epoch, avg_loss, wer, cer)
-
-            if args.checkpoint and main_proc:
-                file_path = '%s/deepspeech_%d.pth' % (save_folder, epoch + 1)
-                torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
-                                                wer_results=wer_results, cer_results=cer_results),
-                           file_path)
+                o.on_epoch_end(model, optimizer, epoch, loss_results, wer_results, cer_results)
 
             if (best_wer is None or best_wer > wer) and main_proc:
                 tqdm.write("Found better validated model, saving to %s" % args.model_path)
