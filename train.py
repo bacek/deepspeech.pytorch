@@ -251,12 +251,12 @@ if __name__ == '__main__':
     for _ in range(start_epoch):
         lr_schedule.step()
 
-    for epoch in tqdm(range(start_epoch, args.epochs), desc='Epoch'):
+    for epoch in tqdm(range(start_epoch, args.epochs), desc='Epoch', initial=start_epoch):
         lr_schedule.step()
         model.train()
         end = time.time()
         start_epoch_time = time.time()
-        for i, (data) in tqdm(enumerate(train_loader, start=start_iter), leave=False, total=len(train_sampler), miniters=0):
+        for i, (data) in tqdm(enumerate(train_loader, start=start_iter), leave=False, initial=start_iter, total=len(train_sampler), miniters=0):
             if i == len(train_sampler):
                 break
             inputs, targets, input_percentages, target_sizes = data
