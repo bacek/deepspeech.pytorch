@@ -19,6 +19,9 @@ def to_np(x):
 
 
 class TensorboardWriter(Observer):
+    '''
+    Update Tensorboard at the end of each epoch
+    '''
     def __init__(self, id, log_dir, log_params):
         super().__init__()
         os.makedirs(log_dir, exist_ok=True)
@@ -29,7 +32,7 @@ class TensorboardWriter(Observer):
         self.tensorboard_writer = SummaryWriter(log_dir)
 
     def on_epoch_end(self, model, optimizer, epoch, loss_results, wer_results, cer_results):
-        tqdm.write("Updating tensorboard for epoch {}".format((epoch + 1)))
+        tqdm.write("Updating tensorboard for epoch {} {}".format(epoch + 1, loss_results))
         values = {
             'Avg Train Loss': loss_results[-1],
             'Avg WER': wer_results[-1],
@@ -45,21 +48,30 @@ class TensorboardWriter(Observer):
 
 
 class CheckpointWriter(Observer):
+    '''
+    Save model checkpoint at the end of epoch
+    '''
     def __init__(self, save_folder):
         super().__init__()
+        tqdm.write("CheckpointWriter")
         self.save_folder = save_folder
         os.makedirs(save_folder, exist_ok=True)
 
-        def on_epoch_end(self, model, optimizer, epoch, loss_results, wer_results, cer_results):
-            file_path = '%s/deepspeech_%d.pth' % (self.save_folder, epoch + 1)
-            torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
-                                            wer_results=wer_results, cer_results=cer_results),
-                       file_path)
+    def on_epoch_end(self, model, optimizer, epoch, loss_results, wer_results, cer_results):
+        tqdm.write("Saving checkpoint {}".format(epoch + 1))
+        file_path = '%s/deepspeech_%d.pth' % (self.save_folder, epoch + 1)
+        torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
+                                        wer_results=wer_results, cer_results=cer_results),
+                   file_path)
 
 
 class CheckpointBatchWriter(Observer):
+    '''
+    Save model checkpoint every number of mini-batches
+    '''
     def __init__(self, save_folder, checkpoint_per_batch):
         super().__init__()
+        tqdm.write("CheckpointBatchWriter")
         self.save_folder = save_folder
         self.checkpoint_per_batch = checkpoint_per_batch
         os.makedirs(save_folder, exist_ok=True)
