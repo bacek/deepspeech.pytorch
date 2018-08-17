@@ -330,7 +330,7 @@ if __name__ == '__main__':
         total_cer, total_wer = 0, 0
         model.eval()
         with torch.no_grad():
-            for i, (data) in tqdm(enumerate(test_loader), total=len(test_loader), desc='Validate'):
+            for i, (data) in tqdm(enumerate(test_loader), total=len(test_loader), desc='Validate', leave=False):
                 inputs, targets, input_percentages, target_sizes = data
                 input_sizes = input_percentages.mul_(int(inputs.size(3))).int()
 
