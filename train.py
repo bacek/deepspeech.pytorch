@@ -259,7 +259,7 @@ if __name__ == '__main__':
         lr_schedule.step()
 
 
-    for epoch in tqdm(range(start_epoch, args.epochs), desc='Epoch', initial=start_epoch):
+    for epoch in tqdm(range(start_epoch, args.epochs), desc='Epoch', initial=start_epoch, total=args.epochs):
         lr_schedule.step()
         model.train()
         end = time.time()
