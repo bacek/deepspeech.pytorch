@@ -1,5 +1,6 @@
 import os
 import torch
+import logging
 
 from model import DeepSpeech
 
@@ -24,8 +25,8 @@ class TensorboardWriter(Observer):
     '''
     Update Tensorboard at the end of each epoch
     '''
-    def __init__(self, logger, id, log_dir, log_params):
-        super().__init__(logger)
+    def __init__(self, id, log_dir, log_params):
+        super().__init__(logging.getLogger('TensorboardWriter'))
         os.makedirs(log_dir, exist_ok=True)
         from tensorboardX import SummaryWriter
 
@@ -34,7 +35,7 @@ class TensorboardWriter(Observer):
         self.tensorboard_writer = SummaryWriter(log_dir)
 
     def on_epoch_end(self, model, optimizer, epoch, loss_results, wer_results, cer_results):
-        self.logger("Updating tensorboard for epoch {} {}".format(epoch + 1, loss_results))
+        self.logger.debug("Updating tensorboard for epoch {} {}".format(epoch + 1, loss_results))
         values = {
             'Avg Train Loss': loss_results[epoch],
             'Avg WER': wer_results[epoch],
@@ -53,14 +54,14 @@ class CheckpointWriter(Observer):
     '''
     Save model checkpoint at the end of epoch
     '''
-    def __init__(self, logger, save_folder):
-        super().__init__(logger)
-        self.logger("CheckpointWriter")
+    def __init__(self, save_folder):
+        super().__init__(logging.getLogger('CheckpointWriter'))
+        self.logger.debug("CheckpointWriter")
         self.save_folder = save_folder
         os.makedirs(save_folder, exist_ok=True)
 
     def on_epoch_end(self, model, optimizer, epoch, loss_results, wer_results, cer_results):
-        self.logger("Saving checkpoint {}".format(epoch + 1))
+        self.logger.debug("Saving checkpoint {}".format(epoch + 1))
         file_path = '%s/deepspeech_%d.pth' % (self.save_folder, epoch + 1)
         torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
                                         wer_results=wer_results, cer_results=cer_results),
@@ -71,9 +72,9 @@ class CheckpointBatchWriter(Observer):
     '''
     Save model checkpoint every number of mini-batches
     '''
-    def __init__(self, logger, save_folder, checkpoint_per_batch):
-        super().__init__(logger)
-        self.logger("CheckpointBatchWriter")
+    def __init__(self, save_folder, checkpoint_per_batch):
+        super().__init__(logging.getLogger('CheckpointBatchWriter'))
+        self.logger.debug("CheckpointBatchWriter")
         self.save_folder = save_folder
         self.checkpoint_per_batch = checkpoint_per_batch
         os.makedirs(save_folder, exist_ok=True)
@@ -81,7 +82,7 @@ class CheckpointBatchWriter(Observer):
     def on_batch_end(self, model, optimizer, epoch, batch_no, loss_results, wer_results, cer_results, avg_loss):
         if batch_no > 0 and (batch_no + 1) % self.checkpoint_per_batch == 0:
             file_path = '%s/deepspeech_checkpoint_epoch_%d_iter_%d.pth' % (self.save_folder, epoch + 1, batch_no + 1)
-            self.logger("Saving checkpoint model to %s" % file_path)
+            self.logger.debug("Saving checkpoint model to %s" % file_path)
             torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, iteration=batch_no,
                                             loss_results=loss_results,
                                             wer_results=wer_results, cer_results=cer_results, avg_loss=avg_loss),

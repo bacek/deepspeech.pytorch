@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import time
+import logging
 
 import torch.distributed as dist
 import torch.utils.data.distributed
@@ -42,7 +43,8 @@ parser.add_argument('--onecycle-anneal-pct', default=0.1, type=float, help='LR a
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
 parser.add_argument('--max-norm', default=400, type=int, help='Norm cutoff to prevent explosion of gradients')
 parser.add_argument('--learning-anneal', default=1.1, type=float, help='Annealing applied to learning rate every epoch')
-parser.add_argument('--silent', dest='silent', action='store_true', help='Turn off progress tracking per iteration')
+parser.add_argument('--log-level', default='DEBUG', type=str, help='Log level')
+parser.add_argument('--log-config', type=str, help='Logger configuration')
 parser.add_argument('--checkpoint', dest='checkpoint', action='store_true', help='Enables checkpoint saving of model')
 parser.add_argument('--checkpoint-per-batch', default=0, type=int, help='Save checkpoint per batch. 0 means never save')
 parser.add_argument('--visdom', dest='visdom', action='store_true', help='Turn on visdom graphing')
@@ -102,6 +104,42 @@ class AverageMeter(object):
         self.count += n
         self.avg = self.sum / self.count
 
+    def __str__(self):
+        return "{self.val:.4f} ({self.avg:.4f})".format(self=self)
+
+
+class TqdmHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            msg = self.format(record)
+            tqdm.write(msg)  # , file=sys.stderr)
+            self.flush()
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except:
+            self.handleError(record)
+
+
+def get_logger(args):
+    # TODO Load config
+    logger = logging.getLogger() # root logger
+    logger.setLevel(args.log_level)
+
+    # create console handler and set level to debug
+    ch = TqdmHandler()
+    ch.setLevel(logging.DEBUG)
+
+    # create formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    # add formatter to ch
+    ch.setFormatter(formatter)
+
+    # add ch to logger
+    logger.addHandler(ch)
+
+    return logging.getLogger(__name__)
+
 
 if __name__ == '__main__':
     args = parser.parse_args()
@@ -115,12 +153,9 @@ if __name__ == '__main__':
         main_proc = args.rank == 0  # Only the first proc should save models
     save_folder = args.save_folder
 
-    if args.silent:
-        logger = lambda x: None
-    else:
-        logger = lambda x: tqdm.write(x)
+    logger = get_logger(args)
 
-    logger('Starting')
+    logger.info('Starting')
 
     observers = []
 
@@ -136,13 +171,13 @@ if __name__ == '__main__':
         epochs = torch.arange(1, args.epochs + 1)
 
     if args.tensorboard and main_proc:
-        observers.append(TensorboardWriter(logger, args.id, args.log_dir, args.log_params))
+        observers.append(TensorboardWriter(args.id, args.log_dir, args.log_params))
 
     os.makedirs(save_folder, exist_ok=True)
 
     avg_loss, start_epoch, start_iter = 0, 0, 0
     if args.continue_from:  # Starting from previous model
-        logger("Loading checkpoint model %s" % args.continue_from)
+        logger.info("Loading checkpoint model %s" % args.continue_from)
         package = torch.load(args.continue_from, map_location=lambda storage, loc: storage)
         model = DeepSpeech.load_model_package(package)
         labels = DeepSpeech.get_labels(model)
@@ -223,7 +258,7 @@ if __name__ == '__main__':
                                   num_workers=args.num_workers)
 
     if (not args.no_shuffle and start_epoch != 0) or args.no_sorta_grad:
-        logger("Shuffling batches for the following epochs")
+        logger.debug("Shuffling batches for the following epochs")
         train_sampler.shuffle(start_epoch)
 
     if args.cuda:
@@ -232,27 +267,27 @@ if __name__ == '__main__':
             model = torch.nn.parallel.DistributedDataParallel(model,
                                                               device_ids=(int(args.gpu_rank),) if args.rank else None)
 
-    print(model)
-    print("Number of parameters: %d" % DeepSpeech.get_param_size(model))
+    logger.debug(model)
+    logger.debug("Number of parameters: %d" % DeepSpeech.get_param_size(model))
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
 
     if args.onecycle:
-        logger("Using OneCycle policy")
-        lr_schedule = OneCycle(logger, optimizer, args.epochs, args.lr / args.onecycle_lr_div, args.lr, args.momentum, args.momentum * args.onecycle_low_momentum, args.onecycle_anneal_pct, args.learning_anneal)
+        logger.info("Using OneCycle policy")
+        lr_schedule = OneCycle(optimizer, args.epochs, args.lr / args.onecycle_lr_div, args.lr, args.momentum, args.momentum * args.onecycle_low_momentum, args.onecycle_anneal_pct, args.learning_anneal)
     else:
-        logger("Using Anneal")
-        lr_schedule = Anneal(logger, optimizer, args.epochs, args.lr, args.learning_anneal)
+        logger.info("Using Anneal")
+        lr_schedule = Anneal(optimizer, args.epochs, args.lr, args.learning_anneal)
 
     # Add observers for different steps needed during actual training only
     if main_proc:
         if args.checkpoint:
-            observers.append(CheckpointWriter(logger, save_folder))
+            observers.append(CheckpointWriter(save_folder))
 
         if args.checkpoint_per_batch > 0:
-            observers.append(CheckpointBatchWriter(logger, save_folder, args.checkpoint_per_batch))
+            observers.append(CheckpointBatchWriter(save_folder, args.checkpoint_per_batch))
 
     # Skip initial epochs to get SGDScheduler up to pace
     for _ in range(start_epoch):
@@ -261,68 +296,71 @@ if __name__ == '__main__':
 
     for epoch in tqdm(range(start_epoch, args.epochs), desc='Epoch', initial=start_epoch, total=args.epochs):
         lr_schedule.step()
+
         model.train()
         end = time.time()
         start_epoch_time = time.time()
-        for i, (data) in tqdm(enumerate(train_loader, start=start_iter), desc='Batch', leave=False, initial=start_iter, total=len(train_sampler), miniters=0):
-            if i == len(train_sampler):
-                break
-            inputs, targets, input_percentages, target_sizes = data
-            input_sizes = input_percentages.mul_(int(inputs.size(3))).int()
-            # measure data loading time
-            data_time.update(time.time() - end)
+        with tqdm(enumerate(train_loader, start=start_iter), desc='Batch', leave=False, initial=start_iter, total=len(train_sampler), miniters=0) as t:
+            for i, (data) in t:
+                if i == len(train_sampler):
+                    break
+                inputs, targets, input_percentages, target_sizes = data
+                input_sizes = input_percentages.mul_(int(inputs.size(3))).int()
+                # measure data loading time
+                data_time.update(time.time() - end)
 
-            if args.cuda:
-                inputs = inputs.cuda()
+                if args.cuda:
+                    inputs = inputs.cuda()
 
-            out, output_sizes = model(inputs, input_sizes)
-            out = out.transpose(0, 1)  # TxNxH
+                out, output_sizes = model(inputs, input_sizes)
+                out = out.transpose(0, 1)  # TxNxH
 
-            loss = criterion(out, targets, output_sizes, target_sizes)
-            loss = loss / inputs.size(0)  # average the loss by minibatch
+                loss = criterion(out, targets, output_sizes, target_sizes)
+                loss = loss / inputs.size(0)  # average the loss by minibatch
 
-            inf = float("inf")
-            if args.distributed:
-                loss_value = reduce_tensor(loss, args.world_size)[0]
-            else:
-                loss_value = loss.item()
-            if loss_value == inf or loss_value == -inf:
-                # XXX Pass through logger?
-                tqdm.write("WARNING: received an inf loss, setting loss value to 0")
-                loss_value = 0
+                inf = float("inf")
+                if args.distributed:
+                    loss_value = reduce_tensor(loss, args.world_size)[0]
+                else:
+                    loss_value = loss.item()
+                if loss_value == inf or loss_value == -inf:
+                    logger.warning("WARNING: received an inf loss, setting loss value to 0")
+                    loss_value = 0
 
-            avg_loss += float(loss_value)
-            losses.update(loss_value, inputs.size(0))
-            del loss_value
+                avg_loss += float(loss_value)
+                losses.update(loss_value, inputs.size(0))
+                del loss_value
 
-            # compute gradient
-            optimizer.zero_grad()
-            loss.backward()
+                # compute gradient
+                optimizer.zero_grad()
+                loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
-            # SGD step
-            optimizer.step()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_norm)
+                # SGD step
+                optimizer.step()
 
-            # measure elapsed time
-            batch_time.update(time.time() - end)
-            end = time.time()
-            logger('Epoch: [{0}][{1}/{2}]\t'
-                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
-                (epoch + 1), (i + 1), len(train_sampler), batch_time=batch_time, data_time=data_time, loss=losses))
+                # measure elapsed time
+                batch_time.update(time.time() - end)
+                end = time.time()
+                logger.debug('Epoch: [{0}][{1}/{2}]\t'
+                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                      'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
+                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
+                    (epoch + 1), (i + 1), len(train_sampler), batch_time=batch_time, data_time=data_time, loss=losses))
 
-            for o in observers:
-                o.on_batch_end(model, optimizer, epoch, i, loss_results, wer_results, cer_results, avg_loss)
+                t.set_postfix(Loss=losses, Data=data_time)
 
-            del loss
-            del out
-            torch.cuda.empty_cache()
+                for o in observers:
+                    o.on_batch_end(model, optimizer, epoch, i, loss_results, wer_results, cer_results, avg_loss)
+
+                del loss
+                del out
+                torch.cuda.empty_cache()
 
         avg_loss /= len(train_sampler)
 
         epoch_time = time.time() - start_epoch_time
-        logger('Training Summary Epoch: [{0}]\t'
+        logger.info('Training Summary Epoch: [{0}]\t'
               'Time taken (s): {epoch_time:.0f}\t'
               'Average Loss {loss:.3f}\t'.format(epoch + 1, epoch_time=epoch_time, loss=avg_loss))
 
@@ -363,7 +401,7 @@ if __name__ == '__main__':
             loss_results[epoch] = avg_loss
             wer_results[epoch] = wer
             cer_results[epoch] = cer
-            logger('Validation Summary Epoch: [{0}]\t'
+            logger.debug('Validation Summary Epoch: [{0}]\t'
                   'Average WER {wer:.3f}\t'
                   'Average CER {cer:.3f}\t'.format(epoch + 1, wer=wer, cer=cer))
 
@@ -389,12 +427,12 @@ if __name__ == '__main__':
                 o.on_epoch_end(model, optimizer, epoch, loss_results, wer_results, cer_results)
 
             if (best_wer is None or best_wer > wer) and main_proc:
-                logger("Found better validated model, saving to %s" % args.model_path)
+                logger.debug("Found better validated model, saving to %s" % args.model_path)
                 torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
                                                 wer_results=wer_results, cer_results=cer_results), args.model_path)
                 best_wer = wer
 
                 avg_loss = 0
             if not args.no_shuffle:
-                logger("Shuffling batches...")
+                logger.debug("Shuffling batches...")
                 train_sampler.shuffle(epoch)
