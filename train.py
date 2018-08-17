@@ -115,6 +115,13 @@ if __name__ == '__main__':
         main_proc = args.rank == 0  # Only the first proc should save models
     save_folder = args.save_folder
 
+    if args.silent:
+        logger = lambda x: None
+    else:
+        logger = lambda x: tqdm.write(x)
+
+    logger('Starting')
+
     observers = []
 
     with torch.no_grad():
@@ -129,7 +136,7 @@ if __name__ == '__main__':
         epochs = torch.arange(1, args.epochs + 1)
 
     if args.tensorboard and main_proc:
-        observers.append(TensorboardWriter(args.id, args.log_dir, args.log_params))
+        observers.append(TensorboardWriter(logger, args.id, args.log_dir, args.log_params))
 
     os.makedirs(save_folder, exist_ok=True)
 
@@ -242,10 +249,10 @@ if __name__ == '__main__':
     # Add observers for different steps needed during actual training only
     if main_proc:
         if args.checkpoint:
-            observers.append(CheckpointWriter(save_folder))
+            observers.append(CheckpointWriter(logger, save_folder))
 
         if args.checkpoint_per_batch > 0:
-            observers.append(CheckpointBatchWriter(save_folder, args.checkpoint_per_batch))
+            observers.append(CheckpointBatchWriter(logger, save_folder, args.checkpoint_per_batch))
 
     # Skip initial epochs to get SGDScheduler up to pace
     for _ in range(start_epoch):
