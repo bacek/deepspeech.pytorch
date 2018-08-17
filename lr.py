@@ -1,5 +1,4 @@
 import itertools
-from tqdm import tqdm
 
 def linear_decay(frm, to, steps):
     '''
@@ -28,7 +27,8 @@ class SGDSchedule(object):
     * lr Learning Rate iterable
     * momentum Optional Momentum iterable
     '''
-    def __init__(self, optimizer, lr, momentum):
+    def __init__(self, logger, optimizer, lr, momentum):
+        self.logger = logger
         self.optimizer = optimizer
         self.lr = lr
         self.momentum = momentum
@@ -44,15 +44,15 @@ class SGDSchedule(object):
         except:
             momentum = None
 
-        tqdm.write("Change LR to {}, momentum to {}".format(lr, momentum))
+        self.logger("Change LR to {}, momentum to {}".format(lr, momentum))
 
         for param_group in self.optimizer.param_groups:
-            tqdm.write("Previous LR {}, momentum {}".format(param_group["lr"], param_group["momentum"]))
+            self.logger("Previous LR {}, momentum {}".format(param_group["lr"], param_group["momentum"]))
             if lr is not None: param_group['lr'] = lr
             if momentum is not None: param_group['momentum'] = momentum
 
 class OneCycle(SGDSchedule):
-    def __init__(self, optimizer, epochs, lr_from, lr_to, momentum_from, momentum_to, anneal_pct, anneal_rate):
+    def __init__(self, logger, optimizer, epochs, lr_from, lr_to, momentum_from, momentum_to, anneal_pct, anneal_rate):
         # Total number of train epochs
         cycle_len = int(epochs * (1 - anneal_pct))
 
@@ -68,9 +68,9 @@ class OneCycle(SGDSchedule):
             [momentum_from for i in range(cycle_len, epochs)]
             ])
 
-        super().__init__(optimizer, lr, momentum)
+        super().__init__(logger, optimizer, lr, momentum)
 
 class Anneal(SGDSchedule):
-    def __init__(self, optimizer, epochs, lr, learning_anneal):
+    def __init__(self, logger, optimizer, epochs, lr, learning_anneal):
         lr = div_decay(lr, learning_anneal, epochs)
-        super().__init__(optimizer, lr, None)
+        super().__init__(logger, optimizer, lr, None)
