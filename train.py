@@ -195,6 +195,9 @@ if __name__ == '__main__':
                 start_iter += 1
             avg_loss = int(package.get('avg_loss', 0))
             loss_results, cer_results, wer_results = package['loss_results'], package['cer_results'], package['wer_results']
+            loss_results.resize_(args.epochs)
+            cer_results.resize_(args.epochs)
+            wer_results.resize_(args.epochs)
 
             for i in range(start_epoch):
                 for o in observers:
