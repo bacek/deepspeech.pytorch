@@ -343,7 +343,9 @@ if __name__ == '__main__':
 
                 del loss
                 del out
-                torch.cuda.empty_cache()
+                if args.cuda:
+                    torch.cuda.empty_cache()
+
 
         avg_loss /= len(train_sampler)
 
