@@ -66,6 +66,7 @@ parser.add_argument('--noise-min', default=0.0,
                     help='Minimum noise level to sample from. (1.0 means all noise, not original signal)', type=float)
 parser.add_argument('--noise-max', default=0.5,
                     help='Maximum noise levels to sample from. Maximum 1.0', type=float)
+parser.add_argument('--multiply', default=1, help='Multiply training dataset', type=int)
 parser.add_argument('--no-shuffle', dest='no_shuffle', action='store_true',
                     help='Turn off shuffling and sample from dataset based on sequence length (smallest to largest)')
 parser.add_argument('--no-sortaGrad', dest='no_sorta_grad', action='store_true',
@@ -231,7 +232,7 @@ if __name__ == '__main__':
     criterion = CTCLoss()
     decoder = GreedyDecoder(labels)
     train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest, labels=labels,
-                                       normalize=True, augment=args.augment)
+                                       normalize=True, augment=args.augment, multiply=args.multiply)
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
                                       normalize=True, augment=False)
     if not args.distributed:
@@ -243,6 +244,8 @@ if __name__ == '__main__':
                                    num_workers=args.num_workers, batch_sampler=train_sampler)
     test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
                                   num_workers=args.num_workers)
+
+    logger.info("Train len: {}", len(train_dataset))
 
     if (not args.no_shuffle and start_epoch != 0) or args.no_sorta_grad:
         logger.debug("Shuffling batches for the following epochs")

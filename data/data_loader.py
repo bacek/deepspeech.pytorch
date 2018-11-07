@@ -132,7 +132,7 @@ class SpectrogramParser(AudioParser):
 
 
 class SpectrogramDataset(Dataset, SpectrogramParser):
-    def __init__(self, audio_conf, manifest_filepath, labels, normalize=False, augment=False):
+    def __init__(self, audio_conf, manifest_filepath, labels, normalize=False, augment=False, multiply=1):
         """
         Dataset that loads tensors via a csv containing file paths to audio files and transcripts separated by
         a comma. Each new line is a different sample. Example below:
@@ -145,9 +145,11 @@ class SpectrogramDataset(Dataset, SpectrogramParser):
         :param labels: String containing all the possible characters to map to
         :param normalize: Apply standard mean and deviation normalization to audio tensor
         :param augment(default False):  Apply random tempo and gain perturbations
+        :param multiply(default 1): Multiply data N times. Useful when we do augmentation/noise injection
         """
         with open(manifest_filepath) as f:
             ids = f.readlines()
+        ids = ids * multiply
         ids = [x.strip().split(',') for x in ids]
         self.ids = ids
         self.size = len(ids)
